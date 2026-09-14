@@ -1,0 +1,15 @@
+export const PAGE_LABELS: Record<string, string> = {
+  home: 'Dashboard',
+  networks: 'Redes',
+  schools: 'Escolas',
+  classes: 'Turmas',
+  users: 'Usuários',
+  books: 'Livros',
+  videos: 'Vídeos',
+  courses: 'Formações',
+  projects: 'Projetos',
+  stock: 'Estoque',
+  permissions: 'Permissões',
+  activities: 'Atividades',
+  requests: 'Pedidos',
+};
