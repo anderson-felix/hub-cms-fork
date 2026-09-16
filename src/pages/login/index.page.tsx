@@ -31,10 +31,11 @@ const LoginPage: React.FC = () => {
     async () => {
       setSubmitLoading(true);
 
-      if (!captcha.token) {
-        setCaptcha((e) => ({ ...e, error: 'Captcha obrigatório' }));
-        return;
-      } else setCaptcha((e) => ({ ...e, error: undefined }));
+      // Captcha temporarily disabled — domain issues in production. Re-enable by uncommenting this block and the <AppReCaptcha /> below.
+      // if (!captcha.token) {
+      //   setCaptcha((e) => ({ ...e, error: 'Captcha obrigatório' }));
+      //   return;
+      // } else setCaptcha((e) => ({ ...e, error: undefined }));
 
       const { admin, token: access_token } = await hubLogin({
         user: data.user,
@@ -154,9 +155,10 @@ const LoginPage: React.FC = () => {
               </label>
             </div>
 
-            <div className="flex justify-center pt-1">
+            {/* Captcha temporarily disabled — domain issues in production. */}
+            {/* <div className="flex justify-center pt-1">
               <AppReCaptcha onChange={(token) => setCaptcha({ token })} error={captcha?.error} />
-            </div>
+            </div> */}
 
             <button
               type="submit"

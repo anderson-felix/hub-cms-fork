@@ -1,3 +1,4 @@
+export * from './changeStudentClass';
 export * from './checkEmail';
 export * from './checkPrimaryCode';
 export * from './checkRecoveryToken';
@@ -9,4 +10,5 @@ export * from './getReportData';
 export * from './recoverPassword';
 export * from './sendRecoveryToken';
 export * from './signup';
+export * from './updateTeacherSchoolLink';
 export * from './updateUserCredentials';
