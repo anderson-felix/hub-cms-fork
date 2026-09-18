@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Upload, X } from 'lucide-react';
+import { Check, ChevronDown, Search, Upload, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -207,6 +207,135 @@ export function SelectField({
         </option>
       ))}
     </select>
+  );
+}
+
+export function SearchableSelectField({
+  options,
+  value,
+  onChange,
+  placeholder = 'Selecione',
+  searchPlaceholder = 'Buscar...',
+  brandClass = 'text-brand-redes',
+  ringClass = 'focus:ring-brand-redes/30 focus:border-brand-redes',
+  error,
+}: {
+  options: MultiSelectOption[];
+  value: string | undefined;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  brandClass?: string;
+  ringClass?: string;
+  error?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dark, setDark] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = options.find((o) => o.value === value);
+  const filtered = options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const updatePosition = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    setQuery('');
+    setDark(!!document.querySelector('.hub-cms-shell.dark'));
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    const focusTimeout = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+      clearTimeout(focusTimeout);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'w-full h-10 px-3 text-sm rounded-lg border bg-background flex items-center justify-between gap-2 text-left focus:outline-none focus:ring-2 transition',
+          ringClass,
+          error ? 'border-destructive focus:ring-destructive/30 focus:border-destructive' : 'border-input',
+        )}
+      >
+        <span className={cn('truncate', selected ? 'text-foreground' : 'text-muted-foreground')}>{selected?.label ?? placeholder}</span>
+        <ChevronDown className={cn('size-4 text-muted-foreground shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open &&
+        position &&
+        createPortal(
+          <div className={cn('hub-cms-shell font-sans', dark && 'dark')}>
+            <div className="fixed inset-0 z-[100]" onClick={() => setOpen(false)} />
+            <div
+              style={{ top: position.top, left: position.left, width: position.width }}
+              className="fixed z-[101] bg-background rounded-lg border border-input shadow-lg overflow-hidden"
+            >
+              <div className="p-2 border-b border-border">
+                <div className="relative">
+                  <Search className="size-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    ref={inputRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={searchPlaceholder}
+                    className={cn(
+                      'w-full pl-7 pr-2 py-1.5 text-sm rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 transition',
+                      ringClass,
+                    )}
+                  />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto py-1">
+                {value && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange('');
+                      setOpen(false);
+                    }}
+                    className="w-full px-3 py-2 text-sm text-left text-muted-foreground hover:bg-muted transition"
+                  >
+                    {placeholder}
+                  </button>
+                )}
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum resultado encontrado.</div>
+                ) : (
+                  filtered.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(o.value);
+                        setOpen(false);
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left flex items-center justify-between hover:bg-muted transition"
+                    >
+                      <span className="text-foreground truncate">{o.label}</span>
+                      {o.value === value && <Check className={cn('size-4 shrink-0', brandClass)} />}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
   );
 }
 

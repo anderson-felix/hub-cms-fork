@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from '@chakra-ui/react';
 import { AlertTriangle, Repeat, School, Search, Trash2 } from 'lucide-react';
 
-import { cookieManager, formatRoleLabel, formatShortName, logError } from '@/_base/utils';
+import { cookieManager, formatClassGrade, formatRoleLabel, formatShortName, logError } from '@/_base/utils';
 import { useAsyncCallback } from '@/_base/hooks';
 import { changeStudentClass, getProfile, listUsers, updateTeacherSchoolLink, updateUserCredentials } from '@/_base/services/user';
 import { removeUser } from '@/_base/services/user/removeUser';
@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, ActionButton, type Column } from '@/components/dashboard/DataTable';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, RadioGroup, SelectField, TextField } from '@/components/ui/form-controls';
+import { Field, RadioGroup, SearchableSelectField, SelectField, TextField } from '@/components/ui/form-controls';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
 
 interface IProps {
@@ -38,8 +38,17 @@ const roleLabel = (role: IHubUser['role']) => formatRoleLabel(role) || role || '
 
 type SchoolRef = { id: string; display_name: string };
 
-const formatTableData = (user: IHubUser, schoolByClassId: Record<string, SchoolRef>): DataType => {
-  const school = (user.hub_class_id && schoolByClassId[user.hub_class_id]) || user.hub_class?.hub_school || user.schools?.[0];
+// `IHubUserSchool.id` (from `user.schools[]`) is the id of the user<->school link row, not the
+// real school id — using it directly fragments one real school into several fake "distinct" ones
+// (each teacher linked to the same school gets a different link-row id). Resolve the real school
+// by display name against the authoritative `schools` list instead.
+const formatTableData = (user: IHubUser, schoolByClassId: Record<string, SchoolRef>, schoolByName: Record<string, SchoolRef>): DataType => {
+  const linkedSchool = user.schools?.[0];
+  const school =
+    (user.hub_class_id && schoolByClassId[user.hub_class_id]) ||
+    user.hub_class?.hub_school ||
+    (linkedSchool && schoolByName[linkedSchool.display_name.trim()]) ||
+    linkedSchool;
 
   return {
     id: user.id,
@@ -71,6 +80,7 @@ const Users: React.FC<IProps> = () => {
   const [users, setUsers] = useState<IHubUser[]>([]);
   const [schools, setSchools] = useState<IHubSchool[]>([]);
   const [schoolByClassId, setSchoolByClassId] = useState<Record<string, SchoolRef>>({});
+  const [schoolByName, setSchoolByName] = useState<Record<string, SchoolRef>>({});
   const [tableData, setTableData] = useState<DataType[]>([]);
   const [search, setSearch] = useState('');
   const [networkFilter, setNetworkFilter] = useState('');
@@ -78,8 +88,9 @@ const Users: React.FC<IProps> = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
 
-  // Student: change class / school
+  // Student: change network / class / school
   const [changeClassOpen, setChangeClassOpen] = useState(false);
+  const [newNetworkId, setNewNetworkId] = useState('');
   const [newSchoolId, setNewSchoolId] = useState('');
   const [newClassId, setNewClassId] = useState('');
   const [dataLossConfirmed, setDataLossConfirmed] = useState(false);
@@ -99,11 +110,15 @@ const Users: React.FC<IProps> = () => {
         setUsers(results);
         setSchools(schoolResults);
 
-        const map: Record<string, SchoolRef> = {};
-        schoolResults.forEach((school) =>
-          school.classes?.forEach((hubClass) => (map[hubClass.id] = { id: school.id, display_name: school.display_name })),
-        );
-        setSchoolByClassId(map);
+        const byClassId: Record<string, SchoolRef> = {};
+        const byName: Record<string, SchoolRef> = {};
+        schoolResults.forEach((school) => {
+          const ref = { id: school.id, display_name: school.display_name };
+          byName[school.display_name.trim()] = ref;
+          school.classes?.forEach((hubClass) => (byClassId[hubClass.id] = ref));
+        });
+        setSchoolByClassId(byClassId);
+        setSchoolByName(byName);
       } catch {
         toast({ status: `error`, description: `Ocorreu um erro` });
       } finally {
@@ -113,8 +128,8 @@ const Users: React.FC<IProps> = () => {
   }, []);
 
   useEffect(() => {
-    setTableData(users.map((user) => formatTableData(user, schoolByClassId)));
-  }, [users, schoolByClassId]);
+    setTableData(users.map((user) => formatTableData(user, schoolByClassId, schoolByName)));
+  }, [users, schoolByClassId, schoolByName]);
 
   const handleOpenUserModal = (id: string) => {
     const hubUser = users.find((e) => e.id === id);
@@ -127,6 +142,7 @@ const Users: React.FC<IProps> = () => {
   const handleOpenChangeClassModal = () => {
     if (!targetUser) return;
     const currentSchoolId = (targetUser.hub_class_id && schoolByClassId[targetUser.hub_class_id]?.id) || targetUser.schools?.[0]?.id || '';
+    setNewNetworkId(targetUser.hub_school_group_id || '');
     setNewSchoolId(currentSchoolId);
     setNewClassId(targetUser.hub_class_id || '');
     setDataLossConfirmed(false);
@@ -135,12 +151,12 @@ const Users: React.FC<IProps> = () => {
 
   const handleChangeStudentClass = useAsyncCallback(
     async () => {
-      if (!targetUser || !newSchoolId || !newClassId) return;
+      if (!targetUser || !newNetworkId || !newSchoolId || !newClassId) return;
       setIsLoading(true);
 
       const updatedUser = await changeStudentClass({
         hub_user_id: targetUser.id,
-        hub_school_group_id: targetUser.hub_school_group_id,
+        hub_school_group_id: newNetworkId,
         hub_school_id: newSchoolId,
         hub_class_id: newClassId,
       });
@@ -151,7 +167,7 @@ const Users: React.FC<IProps> = () => {
 
       toast({ description: 'Turma do aluno atualizada!', status: 'success' });
     },
-    [targetUser, newSchoolId, newClassId],
+    [targetUser, newNetworkId, newSchoolId, newClassId],
     false,
     () => setIsLoading(false),
   );
@@ -227,16 +243,24 @@ const Users: React.FC<IProps> = () => {
     () => setIsLoading(false),
   );
 
+  // Teacher school-link flow: always scoped to the teacher's own (fixed) network.
   const networkSchools = schools.filter((s) => s.hub_school_group_id === targetUser?.hub_school_group_id);
-  const schoolOptionsForClassChange = networkSchools.map((s) => ({ value: s.id, label: s.display_name }));
-  const classOptionsForSelectedSchool = (networkSchools.find((s) => s.id === newSchoolId)?.classes || []).map((c) => ({
+
+  // Student change-class flow: scoped to whichever network is currently picked in that modal
+  // (may differ from the student's current network, since changing network is now allowed).
+  const schoolsInNewNetwork = schools.filter((s) => s.hub_school_group_id === newNetworkId);
+  const schoolOptionsForClassChange = schoolsInNewNetwork.map((s) => ({ value: s.id, label: s.display_name }));
+  const classOptionsForSelectedSchool = (schoolsInNewNetwork.find((s) => s.id === newSchoolId)?.classes || []).map((c) => ({
     value: c.id,
-    label: `${c.display_name} (${c.grade})`,
+    label: `${c.display_name} (${formatClassGrade(c.grade)})`,
   }));
 
-  const linkedSchoolIds = new Set(targetUser?.schools?.map((s) => s.id));
+  // `targetUser.schools[].id` is the user<->school link row id, not the real school id — resolve
+  // each linked school by name against `schoolByName` before comparing/using ids (see formatTableData).
+  const linkedSchools = (targetUser?.schools || []).map((s) => schoolByName[s.display_name.trim()] || s);
+  const linkedSchoolIds = new Set(linkedSchools.map((s) => s.id));
   const addableSchoolOptions = networkSchools.filter((s) => !linkedSchoolIds.has(s.id)).map((s) => ({ value: s.id, label: s.display_name }));
-  const removableSchoolOptions = (targetUser?.schools || []).map((s) => ({ value: s.id, label: s.display_name }));
+  const removableSchoolOptions = linkedSchools.map((s) => ({ value: s.id, label: s.display_name }));
   const schoolLinkOptions = schoolLinkAction === 'add' ? addableSchoolOptions : removableSchoolOptions;
 
   const networkOptions = Array.from(new Map(tableData.filter((r) => r.network_id).map((r) => [r.network_id, r.network_name])).entries()).map(
@@ -276,7 +300,7 @@ const Users: React.FC<IProps> = () => {
           </div>
           <div>
             <div className="font-medium text-zinc-900">{r.name}</div>
-            <div className="text-xs text-zinc-500">{r.email}</div>
+            <div className="text-xs text-zinc-500">{r.username}</div>
           </div>
         </div>
       ),
@@ -305,7 +329,7 @@ const Users: React.FC<IProps> = () => {
 
       <div className="mb-4 flex flex-wrap gap-3">
         <div className="w-full sm:w-56">
-          <SelectField
+          <SearchableSelectField
             value={networkFilter}
             onChange={(v) => {
               setNetworkFilter(v);
@@ -313,10 +337,21 @@ const Users: React.FC<IProps> = () => {
             }}
             options={networkOptions}
             placeholder="Todas as redes"
+            searchPlaceholder="Buscar rede..."
+            brandClass="text-brand-usuarios"
+            ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
           />
         </div>
         <div className="w-full sm:w-56">
-          <SelectField value={schoolFilter} onChange={setSchoolFilter} options={schoolOptions} placeholder="Todas as escolas" />
+          <SearchableSelectField
+            value={schoolFilter}
+            onChange={setSchoolFilter}
+            options={schoolOptions}
+            placeholder="Todas as escolas"
+            searchPlaceholder="Buscar escola..."
+            brandClass="text-brand-usuarios"
+            ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
+          />
         </div>
         <div className="flex-1 min-w-[16rem] relative">
           <Search className="size-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -419,7 +454,7 @@ const Users: React.FC<IProps> = () => {
             <CancelButton onClick={() => setChangeClassOpen(false)} />
             <SubmitButton
               onClick={handleChangeStudentClass}
-              disabled={!newSchoolId || !newClassId || !dataLossConfirmed}
+              disabled={!newNetworkId || !newSchoolId || !newClassId || !dataLossConfirmed}
               brandClass="bg-brand-usuarios"
             >
               Confirmar alteração
@@ -429,11 +464,23 @@ const Users: React.FC<IProps> = () => {
       >
         {targetUser && (
           <div className="space-y-5">
-            <Field label="Rede" hint="A rede do aluno não muda nessa ação.">
-              <TextField value={targetUser.school_group?.display_name ?? '-'} readOnly />
+            <Field label="Rede" required>
+              <SearchableSelectField
+                value={newNetworkId}
+                onChange={(v) => {
+                  setNewNetworkId(v);
+                  setNewSchoolId('');
+                  setNewClassId('');
+                }}
+                options={networkOptions}
+                placeholder="Selecione a rede"
+                searchPlaceholder="Buscar rede..."
+                brandClass="text-brand-usuarios"
+                ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
+              />
             </Field>
-            <Field label="Escola" required>
-              <SelectField
+            <Field label="Escola" required hint={!newNetworkId ? 'Selecione uma rede primeiro.' : undefined}>
+              <SearchableSelectField
                 value={newSchoolId}
                 onChange={(v) => {
                   setNewSchoolId(v);
@@ -441,6 +488,9 @@ const Users: React.FC<IProps> = () => {
                 }}
                 options={schoolOptionsForClassChange}
                 placeholder="Selecione a escola"
+                searchPlaceholder="Buscar escola..."
+                brandClass="text-brand-usuarios"
+                ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
               />
             </Field>
             <Field label="Turma" required hint={!newSchoolId ? 'Selecione uma escola primeiro.' : undefined}>
@@ -450,8 +500,8 @@ const Users: React.FC<IProps> = () => {
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 flex gap-2.5">
               <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
               <p className="text-xs text-destructive">
-                Ao confirmar, os dados do aluno serão desvinculados do cadastro anterior (turma/escola atual) — todo o progresso feito nessa turma
-                será perdido.
+                Ao confirmar, os dados do aluno serão desvinculados do cadastro anterior (rede/escola/turma atual) — todo o progresso feito nessa
+                turma será perdido.
               </p>
             </div>
 
@@ -509,11 +559,14 @@ const Users: React.FC<IProps> = () => {
               required
               hint={schoolLinkOptions.length === 0 ? (schoolLinkAction === 'add' ? 'Nenhuma escola disponível para vincular.' : 'Nenhuma escola vinculada.') : undefined}
             >
-              <SelectField
+              <SearchableSelectField
                 value={schoolLinkTargetId}
                 onChange={setSchoolLinkTargetId}
                 options={schoolLinkOptions}
                 placeholder="Selecione a escola"
+                searchPlaceholder="Buscar escola..."
+                brandClass="text-brand-usuarios"
+                ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
               />
             </Field>
 
