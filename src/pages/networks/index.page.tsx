@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, ActionButton, PrimaryButton, type Column } from '@/components/dashboard/DataTable';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, TextField, MultiSelect } from '@/components/ui/form-controls';
+import { CopyButton, Field, TextField, MultiSelect } from '@/components/ui/form-controls';
 import { Toggle } from '@/components/ui/form-controls';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
 
@@ -32,9 +32,9 @@ type DataType = {
 
 const formatTableData = (schoolGroup: IHubSchoolGroup): DataType => ({
   id: schoolGroup.id,
-  code: schoolGroup.code,
+  code: schoolGroup.code || '-',
   school_quantity: `${schoolGroup.schools?.length ?? 0}`,
-  school_group_name: schoolGroup.display_name,
+  school_group_name: schoolGroup.display_name || '-',
 });
 
 const RESTRICTION_HELP =
@@ -158,7 +158,7 @@ const Networks: React.FC<IProps> = () => {
   const filteredData = tableData.filter((row) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    return row.code.toLowerCase().includes(q) || row.school_group_name.toLowerCase().includes(q);
+    return row.code?.toLowerCase().includes(q) || row.school_group_name?.toLowerCase().includes(q);
   });
 
   const columns: Column<DataType>[] = [
@@ -183,7 +183,14 @@ const Networks: React.FC<IProps> = () => {
       header: 'Ações',
       className: 'text-right',
       render: (r) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-1">
+          <CopyButton
+            className="h-8 w-8"
+            getText={() =>
+              `Esse é o código da rede ${r.school_group_name}: ${r.code}\nEsse código é usado apenas para cadastro de PROFESSORES`
+            }
+            onCopied={() => toast({ description: 'Código copiado!', status: 'success' })}
+          />
           <ActionButton tone="primary" onClick={() => handleOpenSchoolGroupModal(r.code)}>
             Visualizar
           </ActionButton>

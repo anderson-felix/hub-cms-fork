@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Search, Upload, X } from 'lucide-react';
+import { Check, ChevronDown, Copy, Search, Upload, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -402,6 +402,43 @@ export function FileField({
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
     </div>
+  );
+}
+
+export function CopyButton({
+  getText,
+  onCopied,
+  className,
+}: {
+  getText: () => string;
+  onCopied?: () => void;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(getText());
+      setCopied(true);
+      onCopied?.();
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard access denied — silently no-op */
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label="Copiar"
+      className={cn(
+        'shrink-0 h-10 w-10 grid place-items-center rounded-lg border border-input bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition',
+        className,
+      )}
+    >
+      {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+    </button>
   );
 }
 

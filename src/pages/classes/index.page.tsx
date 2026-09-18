@@ -18,7 +18,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, ActionButton, PrimaryButton, type Column } from '@/components/dashboard/DataTable';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, TextField, SelectField, RadioGroup } from '@/components/ui/form-controls';
+import { CopyButton, Field, TextField, SelectField, RadioGroup } from '@/components/ui/form-controls';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
 
 interface IProps {
@@ -43,10 +43,10 @@ type DataType = {
 
 const formatTableData = (hubClass: IHubClass): DataType => ({
   id: hubClass.id,
-  code: hubClass.code,
-  class_name: hubClass.display_name,
-  school_name: hubClass.hub_school.display_name,
-  grade: hubClass.grade,
+  code: hubClass.code || '-',
+  class_name: hubClass.display_name || '-',
+  school_name: hubClass.hub_school?.display_name || '-',
+  grade: hubClass.grade || '-',
   student_quantity: `${hubClass.students?.length ?? 0}`,
 });
 
@@ -194,10 +194,10 @@ const Classes: React.FC<IProps> = () => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return (
-      row.code.toLowerCase().includes(q) ||
-      row.class_name.toLowerCase().includes(q) ||
-      row.school_name.toLowerCase().includes(q) ||
-      row.grade.toLowerCase().includes(q)
+      row.code?.toLowerCase().includes(q) ||
+      row.class_name?.toLowerCase().includes(q) ||
+      row.school_name?.toLowerCase().includes(q) ||
+      row.grade?.toLowerCase().includes(q)
     );
   });
 
@@ -224,7 +224,14 @@ const Classes: React.FC<IProps> = () => {
       header: 'Ações',
       className: 'text-right',
       render: (r) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-1">
+          <CopyButton
+            className="h-8 w-8"
+            getText={() =>
+              `Esse é o código da ${r.class_name} na escola ${r.school_name}: ${r.code}\nEsse código é usado apenas para cadastro de ALUNOS`
+            }
+            onCopied={() => toast({ description: 'Código copiado!', status: 'success' })}
+          />
           <ActionButton tone="primary" onClick={() => handleOpenClassModal(r.code)}>
             Visualizar
           </ActionButton>
@@ -234,8 +241,8 @@ const Classes: React.FC<IProps> = () => {
   ];
 
   const schoolOptions = [...schools]
-    .sort((a, b) => a.display_name.localeCompare(b.display_name))
-    .map((s) => ({ value: s.id, label: `${s.display_name} (${s.school_group.display_name})` }));
+    .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''))
+    .map((s) => ({ value: s.id, label: `${s.display_name || '-'} (${s.school_group?.display_name || '-'})` }));
   const gradeOptions = availableGrades.map((g) => ({ value: g, label: formatClassGrade(g) }));
 
   return (
@@ -281,7 +288,7 @@ const Classes: React.FC<IProps> = () => {
           <div className="space-y-5">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Escola">
-                <TextField value={targetClass.hub_school.display_name} readOnly />
+                <TextField value={targetClass.hub_school?.display_name ?? '-'} readOnly />
               </Field>
               <Field label="Ano">
                 <TextField value={formatClassGrade(targetClass.grade)} readOnly />

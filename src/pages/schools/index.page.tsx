@@ -37,10 +37,10 @@ type DataType = {
 
 const formatTableData = (school: IHubSchool): DataType => ({
   id: school.id,
-  code: school.code,
+  code: school.code || '-',
   class_quantity: `${school.classes?.length ?? 0}`,
-  school_group_name: school.school_group.display_name,
-  school_name: school.display_name,
+  school_group_name: school.school_group?.display_name || '-',
+  school_name: school.display_name || '-',
 });
 
 const FORCE_REDEFINE_OPTIONS = [
@@ -204,7 +204,11 @@ const Schools: React.FC<IProps> = () => {
   const filteredData = tableData.filter((row) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    return row.code.toLowerCase().includes(q) || row.school_name.toLowerCase().includes(q) || row.school_group_name.toLowerCase().includes(q);
+    return (
+      row.code?.toLowerCase().includes(q) ||
+      row.school_name?.toLowerCase().includes(q) ||
+      row.school_group_name?.toLowerCase().includes(q)
+    );
   });
 
   const columns: Column<DataType>[] = [
@@ -280,7 +284,7 @@ const Schools: React.FC<IProps> = () => {
         {targetSchool && (
           <div className="space-y-5">
             <Field label="Rede">
-              <TextField value={targetSchool.school_group.display_name} readOnly />
+              <TextField value={targetSchool.school_group?.display_name ?? '-'} readOnly />
             </Field>
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Nome" required>
