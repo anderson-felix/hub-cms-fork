@@ -28,12 +28,14 @@ type DataType = {
   code: string;
   school_group_name: string;
   school_quantity: string;
+  suspended: boolean;
 };
 
 const formatTableData = (schoolGroup: IHubSchoolGroup): DataType => ({
   id: schoolGroup.id,
   code: schoolGroup.code || '-',
   school_quantity: `${schoolGroup.schools?.length ?? 0}`,
+  suspended: !!schoolGroup.access_suspended,
   school_group_name: schoolGroup.display_name || '-',
 });
 
@@ -83,6 +85,12 @@ const Networks: React.FC<IProps> = () => {
     if (school) setTargetSchoolGroup(school);
   };
 
+  const originalGroup = schoolGroups.find((g) => g.id === targetSchoolGroup?.id);
+  const suspensionChanged =
+    !!targetSchoolGroup &&
+    (!!targetSchoolGroup.access_suspended !== !!originalGroup?.access_suspended ||
+      (targetSchoolGroup.suspension_reason ?? '') !== (originalGroup?.suspension_reason ?? ''));
+
   const handleUpdateSchoolGroup = useAsyncCallback(
     async () => {
       if (!targetSchoolGroup) return;
@@ -94,6 +102,11 @@ const Networks: React.FC<IProps> = () => {
         description: targetSchoolGroup.description,
         permissions: targetSchoolGroup.usage_permission_links?.map((link) => link.permission.id),
         metadata: targetSchoolGroup.metadata,
+        // Only sent when changed, so saving other fields keeps working while the backend field is not deployed.
+        ...(suspensionChanged && {
+          access_suspended: !!targetSchoolGroup.access_suspended,
+          suspension_reason: targetSchoolGroup.access_suspended ? targetSchoolGroup.suspension_reason?.trim() || null : null,
+        }),
       });
 
       setSchoolGroups((s) => s.map((e) => (e.id === updatedSchoolGroup.id ? { ...targetSchoolGroup, ...updatedSchoolGroup } : e)));
@@ -101,7 +114,7 @@ const Networks: React.FC<IProps> = () => {
 
       toast({ description: 'Rede atualizada!', status: 'success' });
     },
-    [targetSchoolGroup],
+    [targetSchoolGroup, suspensionChanged],
     false,
     () => setIsLoading(false),
   );
@@ -171,7 +184,10 @@ const Networks: React.FC<IProps> = () => {
             <Network className="size-4 text-brand-redes" />
           </div>
           <div className="flex flex-col">
-            <span className="font-medium text-zinc-900">{r.school_group_name}</span>
+            <span className="font-medium text-zinc-900">
+              {r.school_group_name}
+              {r.suspended && <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600">Acesso suspenso</span>}
+            </span>
             <span className="text-[11px] text-zinc-400">Código {r.code}</span>
           </div>
         </div>
@@ -281,6 +297,32 @@ const Networks: React.FC<IProps> = () => {
                 }
               />
               <span className="text-sm text-foreground">Restringir acesso de conteúdo</span>
+            </div>
+
+            <div className="rounded-xl border border-border p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <Toggle
+                  checked={!!targetSchoolGroup.access_suspended}
+                  activeClass="bg-red-500"
+                  onChange={(checked) => setTargetSchoolGroup((e) => (e ? { ...e, access_suspended: checked } : e))}
+                />
+                <span className="text-sm font-medium text-foreground">Suspender acesso da rede</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Enquanto suspenso, alunos e professores desta rede não conseguem fazer login. Ao desmarcar, o acesso é liberado na hora.
+              </p>
+              {targetSchoolGroup.access_suspended && (
+                <>
+                  <Field label="Motivo (interno)">
+                    <TextField
+                      value={targetSchoolGroup.suspension_reason ?? ''}
+                      onChange={(v) => setTargetSchoolGroup((e) => (e ? { ...e, suspension_reason: v } : e))}
+                      placeholder="Visível apenas para administradores"
+                    />
+                  </Field>
+                  <p className="text-xs text-red-600">Salve para aplicar. Usuários já logados podem manter a sessão até o token expirar.</p>
+                </>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2 border-t border-border">

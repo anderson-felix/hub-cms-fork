@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, ActionButton, type Column } from '@/components/dashboard/DataTable';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, RadioGroup, SearchableSelectField, SelectField, TextField } from '@/components/ui/form-controls';
+import { Field, MultiSelect, SearchableSelectField, SelectField, TextField } from '@/components/ui/form-controls';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
 
 interface IProps {
@@ -24,6 +24,7 @@ interface IProps {
 type DataType = {
   id: string;
   role: string;
+  role_key: string;
   name: string;
   email: string;
   username: string;
@@ -53,6 +54,7 @@ const formatTableData = (user: IHubUser, schoolByClassId: Record<string, SchoolR
   return {
     id: user.id,
     role: roleLabel(user.role),
+    role_key: user.role || '',
     name: formatShortName(user.name, true),
     email: user.email || `-`,
     username: user.username,
@@ -85,6 +87,7 @@ const Users: React.FC<IProps> = () => {
   const [search, setSearch] = useState('');
   const [networkFilter, setNetworkFilter] = useState('');
   const [schoolFilter, setSchoolFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
 
@@ -97,8 +100,7 @@ const Users: React.FC<IProps> = () => {
 
   // Teacher: link / unlink schools within their own network
   const [teacherSchoolsOpen, setTeacherSchoolsOpen] = useState(false);
-  const [schoolLinkAction, setSchoolLinkAction] = useState<'add' | 'remove'>('add');
-  const [schoolLinkTargetId, setSchoolLinkTargetId] = useState('');
+  const [schoolLinkAddIds, setSchoolLinkAddIds] = useState<string[]>([]);
 
   const toast = useToast();
 
@@ -173,33 +175,31 @@ const Users: React.FC<IProps> = () => {
   );
 
   const handleOpenTeacherSchoolsModal = () => {
-    setSchoolLinkAction('add');
-    setSchoolLinkTargetId('');
+    setSchoolLinkAddIds([]);
     setTeacherSchoolsOpen(true);
   };
 
   const handleUpdateTeacherSchoolLink = useAsyncCallback(
     async () => {
-      if (!targetUser || !schoolLinkTargetId) return;
+      if (!targetUser || schoolLinkAddIds.length === 0) return;
       setIsLoading(true);
+
+      const [hub_school_id, ...extra_schools] = schoolLinkAddIds;
 
       const updatedUser = await updateTeacherSchoolLink({
         hub_user_id: targetUser.id,
         hub_school_group_id: targetUser.hub_school_group_id,
-        hub_school_id: schoolLinkTargetId,
-        action: schoolLinkAction,
+        hub_school_id,
+        extra_schools,
       });
 
       setUsers((s) => s.map((e) => (e.id === updatedUser.id ? { ...targetUser, ...updatedUser } : e)));
       setTargetUser((e) => (e ? { ...e, ...updatedUser } : e));
-      setSchoolLinkTargetId('');
+      setSchoolLinkAddIds([]);
 
-      toast({
-        description: schoolLinkAction === 'add' ? 'Escola vinculada ao professor!' : 'Escola desvinculada do professor!',
-        status: 'success',
-      });
+      toast({ description: 'Escola(s) vinculada(s) ao professor!', status: 'success' });
     },
-    [targetUser, schoolLinkTargetId, schoolLinkAction],
+    [targetUser, schoolLinkAddIds],
     false,
     () => setIsLoading(false),
   );
@@ -260,8 +260,6 @@ const Users: React.FC<IProps> = () => {
   const linkedSchools = (targetUser?.schools || []).map((s) => schoolByName[s.display_name.trim()] || s);
   const linkedSchoolIds = new Set(linkedSchools.map((s) => s.id));
   const addableSchoolOptions = networkSchools.filter((s) => !linkedSchoolIds.has(s.id)).map((s) => ({ value: s.id, label: s.display_name }));
-  const removableSchoolOptions = linkedSchools.map((s) => ({ value: s.id, label: s.display_name }));
-  const schoolLinkOptions = schoolLinkAction === 'add' ? addableSchoolOptions : removableSchoolOptions;
 
   const networkOptions = Array.from(new Map(tableData.filter((r) => r.network_id).map((r) => [r.network_id, r.network_name])).entries()).map(
     ([value, label]) => ({ value, label }),
@@ -276,6 +274,7 @@ const Users: React.FC<IProps> = () => {
   const filteredData = tableData.filter((row) => {
     if (networkFilter && row.network_id !== networkFilter) return false;
     if (schoolFilter && row.school_id !== schoolFilter) return false;
+    if (roleFilter && row.role_key !== roleFilter) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return (
@@ -349,6 +348,20 @@ const Users: React.FC<IProps> = () => {
             options={schoolOptions}
             placeholder="Todas as escolas"
             searchPlaceholder="Buscar escola..."
+            brandClass="text-brand-usuarios"
+            ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
+          />
+        </div>
+        <div className="w-full sm:w-56">
+          <SearchableSelectField
+            value={roleFilter}
+            onChange={setRoleFilter}
+            options={[
+              { value: 'teacher', label: 'Professor' },
+              { value: 'student', label: 'Aluno' },
+            ]}
+            placeholder="Todos os papéis"
+            searchPlaceholder="Buscar papel..."
             brandClass="text-brand-usuarios"
             ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
           />
@@ -528,10 +541,10 @@ const Users: React.FC<IProps> = () => {
             <CancelButton onClick={() => setTeacherSchoolsOpen(false)} />
             <SubmitButton
               onClick={handleUpdateTeacherSchoolLink}
-              disabled={!schoolLinkTargetId}
-              brandClass={schoolLinkAction === 'remove' ? 'bg-destructive' : 'bg-brand-usuarios'}
+              disabled={schoolLinkAddIds.length === 0}
+              brandClass="bg-brand-usuarios"
             >
-              {schoolLinkAction === 'add' ? 'Vincular escola' : 'Desvincular escola'}
+              {`Vincular ${schoolLinkAddIds.length > 1 ? `${schoolLinkAddIds.length} escolas` : 'escola'}`}
             </SubmitButton>
           </>
         }
@@ -541,31 +554,18 @@ const Users: React.FC<IProps> = () => {
             <Field label="Rede" hint="Só é possível vincular escolas da mesma rede do professor.">
               <TextField value={targetUser.school_group?.display_name ?? '-'} readOnly />
             </Field>
-            <Field label="Ação">
-              <RadioGroup
-                value={schoolLinkAction}
-                onChange={(v) => {
-                  setSchoolLinkAction(v as 'add' | 'remove');
-                  setSchoolLinkTargetId('');
-                }}
-                options={[
-                  { value: 'add', label: 'Adicionar escola' },
-                  { value: 'remove', label: 'Remover escola' },
-                ]}
-              />
-            </Field>
             <Field
-              label="Escola"
+              label="Escolas"
               required
-              hint={schoolLinkOptions.length === 0 ? (schoolLinkAction === 'add' ? 'Nenhuma escola disponível para vincular.' : 'Nenhuma escola vinculada.') : undefined}
+              hint={addableSchoolOptions.length === 0 ? 'Nenhuma escola disponível para vincular.' : 'Pode selecionar mais de uma.'}
             >
-              <SearchableSelectField
-                value={schoolLinkTargetId}
-                onChange={setSchoolLinkTargetId}
-                options={schoolLinkOptions}
-                placeholder="Selecione a escola"
-                searchPlaceholder="Buscar escola..."
+              <MultiSelect
+                value={schoolLinkAddIds}
+                onChange={setSchoolLinkAddIds}
+                options={addableSchoolOptions}
+                placeholder="Selecione as escolas"
                 brandClass="text-brand-usuarios"
+                brandBgClass="bg-brand-usuarios/10"
                 ringClass="focus:ring-brand-usuarios/30 focus:border-brand-usuarios"
               />
             </Field>
