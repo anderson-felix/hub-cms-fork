@@ -31,6 +31,8 @@ type DataType = {
   class_name: string;
   school_id: string;
   school_name: string;
+  /** All schools linked to this user (deduped by real school id), for teachers with more than one. */
+  schools: SchoolRef[];
   network_id: string;
   network_name: string;
 };
@@ -43,13 +45,22 @@ type SchoolRef = { id: string; display_name: string };
 // real school id — using it directly fragments one real school into several fake "distinct" ones
 // (each teacher linked to the same school gets a different link-row id). Resolve the real school
 // by display name against the authoritative `schools` list instead.
+// A user can have several `hub_user_schools` link rows resolving to the same real school
+// (e.g. re-linking during testing), so dedupe by the resolved school id before displaying.
+export const dedupeSchools = (schools: SchoolRef[]): SchoolRef[] => {
+  const seen = new Set<string>();
+  return schools.filter((s) => {
+    if (!s?.id || seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+};
+
 const formatTableData = (user: IHubUser, schoolByClassId: Record<string, SchoolRef>, schoolByName: Record<string, SchoolRef>): DataType => {
-  const linkedSchool = user.schools?.[0];
-  const school =
-    (user.hub_class_id && schoolByClassId[user.hub_class_id]) ||
-    user.hub_class?.hub_school ||
-    (linkedSchool && schoolByName[linkedSchool.display_name.trim()]) ||
-    linkedSchool;
+  const linkedSchools = dedupeSchools((user.schools || []).map((s) => schoolByName[s.display_name.trim()] || s));
+  const classSchool = (user.hub_class_id && schoolByClassId[user.hub_class_id]) || user.hub_class?.hub_school;
+  const school = classSchool || linkedSchools[0];
+  const schools = classSchool ? dedupeSchools([classSchool, ...linkedSchools]) : linkedSchools;
 
   return {
     id: user.id,
@@ -61,6 +72,7 @@ const formatTableData = (user: IHubUser, schoolByClassId: Record<string, SchoolR
     class_name: user.hub_class?.display_name || `-`,
     school_id: school?.id || '',
     school_name: school?.display_name || `-`,
+    schools,
     network_id: user.hub_school_group_id || '',
     network_name: user.school_group?.display_name || `-`,
   };
@@ -257,7 +269,7 @@ const Users: React.FC<IProps> = () => {
 
   // `targetUser.schools[].id` is the user<->school link row id, not the real school id — resolve
   // each linked school by name against `schoolByName` before comparing/using ids (see formatTableData).
-  const linkedSchools = (targetUser?.schools || []).map((s) => schoolByName[s.display_name.trim()] || s);
+  const linkedSchools = dedupeSchools((targetUser?.schools || []).map((s) => schoolByName[s.display_name.trim()] || s));
   const linkedSchoolIds = new Set(linkedSchools.map((s) => s.id));
   const addableSchoolOptions = networkSchools.filter((s) => !linkedSchoolIds.has(s.id)).map((s) => ({ value: s.id, label: s.display_name }));
 
@@ -267,13 +279,16 @@ const Users: React.FC<IProps> = () => {
 
   const schoolOptions = Array.from(
     new Map(
-      tableData.filter((r) => r.school_id && (!networkFilter || r.network_id === networkFilter)).map((r) => [r.school_id, r.school_name]),
+      tableData
+        .filter((r) => !networkFilter || r.network_id === networkFilter)
+        .flatMap((r) => r.schools)
+        .map((s) => [s.id, s.display_name]),
     ).entries(),
   ).map(([value, label]) => ({ value, label }));
 
   const filteredData = tableData.filter((row) => {
     if (networkFilter && row.network_id !== networkFilter) return false;
-    if (schoolFilter && row.school_id !== schoolFilter) return false;
+    if (schoolFilter && !row.schools.some((s) => s.id === schoolFilter)) return false;
     if (roleFilter && row.role_key !== roleFilter) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
@@ -283,7 +298,7 @@ const Users: React.FC<IProps> = () => {
       row.username?.toLowerCase().includes(q) ||
       row.role?.toLowerCase().includes(q) ||
       row.class_name?.toLowerCase().includes(q) ||
-      row.school_name?.toLowerCase().includes(q) ||
+      row.schools.some((s) => s.display_name?.toLowerCase().includes(q)) ||
       row.network_name?.toLowerCase().includes(q)
     );
   });
@@ -306,7 +321,27 @@ const Users: React.FC<IProps> = () => {
     },
     { key: 'papel', header: 'Papel', render: (r) => <span className="text-zinc-600">{r.role}</span> },
     { key: 'turma', header: 'Turma', render: (r) => <span className="text-zinc-600">{r.class_name}</span> },
-    { key: 'escola', header: 'Escola', render: (r) => <span className="text-zinc-600">{r.school_name}</span> },
+    {
+      key: 'escola',
+      header: 'Escola',
+      render: (r) =>
+        r.schools.length > 1 ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-600">{r.school_name}</span>
+            <span
+              title={r.schools
+                .slice(1)
+                .map((s) => s.display_name)
+                .join('\n')}
+              className="rounded-full bg-brand-usuarios/10 px-1.5 py-0.5 text-[11px] font-medium text-brand-usuarios cursor-default"
+            >
+              +{r.schools.length - 1}
+            </span>
+          </div>
+        ) : (
+          <span className="text-zinc-600">{r.school_name}</span>
+        ),
+    },
     { key: 'rede', header: 'Rede', render: (r) => <span className="text-zinc-600">{r.network_name}</span> },
     {
       key: 'acoes',
