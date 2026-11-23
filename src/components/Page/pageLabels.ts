@@ -10,6 +10,8 @@ export const PAGE_LABELS: Record<string, string> = {
   projects: 'Projetos',
   stock: 'Estoque',
   permissions: 'Permissões',
+  forms: 'Avaliações',
+  audit: 'Auditoria',
   activities: 'Atividades',
   requests: 'Pedidos',
 };

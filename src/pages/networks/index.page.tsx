@@ -1,12 +1,19 @@
 import { GetServerSideProps } from 'next';
 import { useEffect, useState } from 'react';
 import { useToast } from '@chakra-ui/react';
-import { Network, Plus, RotateCcw, Search, Trash2, HelpCircle } from 'lucide-react';
+import { Network, Plus, RotateCcw, Search, ShieldOff, Trash2, HelpCircle } from 'lucide-react';
 
 import { cookieManager, logError } from '@/_base/utils';
 import { useAsyncCallback, useInputHandler } from '@/_base/hooks';
 import { getProfile } from '@/_base/services/user';
-import { createSchoolGroup, listSchoolGroups, removeSchool, resetProjectsFromSchoolGroup, updateSchoolGroup } from '@/_base/services/schoolGroup';
+import {
+  createSchoolGroup,
+  listSchoolGroups,
+  removeSchool,
+  resetProjectsFromSchoolGroup,
+  restrictSchoolGroupAccess,
+  updateSchoolGroup,
+} from '@/_base/services/schoolGroup';
 import { EMPTY_SCHOOL_GROUP_DATA, IHubSchoolGroup, registerSchoolGroupSchema } from '@/_base/interfaces/schoolGroup';
 import { IHubPermission } from '@/_base/interfaces/permission';
 import { listPermissions } from '@/_base/services/permissions';
@@ -15,6 +22,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, ActionButton, PrimaryButton, type Column } from '@/components/dashboard/DataTable';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { AccessControlModal } from '@/components/ui/access-control-modal';
 import { CopyButton, Field, TextField, MultiSelect } from '@/components/ui/form-controls';
 import { Toggle } from '@/components/ui/form-controls';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
@@ -28,14 +36,12 @@ type DataType = {
   code: string;
   school_group_name: string;
   school_quantity: string;
-  suspended: boolean;
 };
 
 const formatTableData = (schoolGroup: IHubSchoolGroup): DataType => ({
   id: schoolGroup.id,
   code: schoolGroup.code || '-',
   school_quantity: `${schoolGroup.schools?.length ?? 0}`,
-  suspended: !!schoolGroup.access_suspended,
   school_group_name: schoolGroup.display_name || '-',
 });
 
@@ -51,6 +57,7 @@ const Networks: React.FC<IProps> = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [removeModalOpen, setRemoveModalOpen] = useState(false);
+  const [restrictModalOpen, setRestrictModalOpen] = useState(false);
 
   const toast = useToast();
   const { data, errors, setErrors, onInputChange, submit, setData } = useInputHandler({
@@ -85,12 +92,6 @@ const Networks: React.FC<IProps> = () => {
     if (school) setTargetSchoolGroup(school);
   };
 
-  const originalGroup = schoolGroups.find((g) => g.id === targetSchoolGroup?.id);
-  const suspensionChanged =
-    !!targetSchoolGroup &&
-    (!!targetSchoolGroup.access_suspended !== !!originalGroup?.access_suspended ||
-      (targetSchoolGroup.suspension_reason ?? '') !== (originalGroup?.suspension_reason ?? ''));
-
   const handleUpdateSchoolGroup = useAsyncCallback(
     async () => {
       if (!targetSchoolGroup) return;
@@ -102,11 +103,6 @@ const Networks: React.FC<IProps> = () => {
         description: targetSchoolGroup.description,
         permissions: targetSchoolGroup.usage_permission_links?.map((link) => link.permission.id),
         metadata: targetSchoolGroup.metadata,
-        // Only sent when changed, so saving other fields keeps working while the backend field is not deployed.
-        ...(suspensionChanged && {
-          access_suspended: !!targetSchoolGroup.access_suspended,
-          suspension_reason: targetSchoolGroup.access_suspended ? targetSchoolGroup.suspension_reason?.trim() || null : null,
-        }),
       });
 
       setSchoolGroups((s) => s.map((e) => (e.id === updatedSchoolGroup.id ? { ...targetSchoolGroup, ...updatedSchoolGroup } : e)));
@@ -114,7 +110,27 @@ const Networks: React.FC<IProps> = () => {
 
       toast({ description: 'Rede atualizada!', status: 'success' });
     },
-    [targetSchoolGroup, suspensionChanged],
+    [targetSchoolGroup],
+    false,
+    () => setIsLoading(false),
+  );
+
+  // Access is enforced per user on the backend (`disabled_at`), so there is no readable status on the
+  // network itself: this is a fire-and-forget action (enable / restrict), applied instantly.
+  const handleRestrictAccess = useAsyncCallback(
+    async (disabled: boolean) => {
+      if (!targetSchoolGroup) return;
+      setIsLoading(true);
+
+      await restrictSchoolGroupAccess(targetSchoolGroup.id, disabled);
+
+      setRestrictModalOpen(false);
+      toast({
+        description: disabled ? 'Acesso da rede restringido!' : 'Acesso da rede habilitado!',
+        status: 'success',
+      });
+    },
+    [targetSchoolGroup],
     false,
     () => setIsLoading(false),
   );
@@ -186,7 +202,6 @@ const Networks: React.FC<IProps> = () => {
           <div className="flex flex-col">
             <span className="font-medium text-zinc-900">
               {r.school_group_name}
-              {r.suspended && <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600">Acesso suspenso</span>}
             </span>
             <span className="text-[11px] text-zinc-400">Código {r.code}</span>
           </div>
@@ -299,33 +314,10 @@ const Networks: React.FC<IProps> = () => {
               <span className="text-sm text-foreground">Restringir acesso de conteúdo</span>
             </div>
 
-            <div className="rounded-xl border border-border p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <Toggle
-                  checked={!!targetSchoolGroup.access_suspended}
-                  activeClass="bg-red-500"
-                  onChange={(checked) => setTargetSchoolGroup((e) => (e ? { ...e, access_suspended: checked } : e))}
-                />
-                <span className="text-sm font-medium text-foreground">Suspender acesso da rede</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Enquanto suspenso, alunos e professores desta rede não conseguem fazer login. Ao desmarcar, o acesso é liberado na hora.
-              </p>
-              {targetSchoolGroup.access_suspended && (
-                <>
-                  <Field label="Motivo (interno)">
-                    <TextField
-                      value={targetSchoolGroup.suspension_reason ?? ''}
-                      onChange={(v) => setTargetSchoolGroup((e) => (e ? { ...e, suspension_reason: v } : e))}
-                      placeholder="Visível apenas para administradores"
-                    />
-                  </Field>
-                  <p className="text-xs text-red-600">Salve para aplicar. Usuários já logados podem manter a sessão até o token expirar.</p>
-                </>
-              )}
-            </div>
-
             <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+              <GhostButton onClick={() => setRestrictModalOpen(true)}>
+                <ShieldOff className="size-4" /> Gerenciar acessos
+              </GhostButton>
               <GhostButton onClick={() => setResetModalOpen(true)}>
                 <RotateCcw className="size-4" /> Resetar projetos
               </GhostButton>
@@ -384,6 +376,14 @@ const Networks: React.FC<IProps> = () => {
         description="Tem certeza disso? Essa ação é irreversível."
         confirmLabel="Remover"
         tone="danger"
+      />
+      <AccessControlModal
+        open={restrictModalOpen}
+        onClose={() => setRestrictModalOpen(false)}
+        title="Acessos da rede"
+        description={`Habilita ou restringe o login de todos os alunos e professores de todas as escolas da rede ${targetSchoolGroup?.display_name ?? ''} (uso típico: inadimplência).`}
+        onEnable={() => handleRestrictAccess(false)}
+        onRestrict={() => handleRestrictAccess(true)}
       />
 
       {/* Create modal */}

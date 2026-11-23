@@ -9,8 +9,10 @@ import {
   Video,
   GanttChart,
   FolderKanban,
+  ClipboardList,
   Boxes,
   KeyRound,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -50,12 +52,16 @@ const navGroups: Array<{ label: string; items: NavItem[] }> = [
       { name: 'Vídeos', page: 'videos', icon: Video, brandClass: BRAND_TEXT_CLASS.videos },
       { name: 'Formações', page: 'courses', icon: GanttChart, brandClass: BRAND_TEXT_CLASS.formacoes },
       { name: 'Projetos', page: 'projects', icon: FolderKanban, brandClass: BRAND_TEXT_CLASS.projetos },
+      { name: 'Avaliações', page: 'forms', icon: ClipboardList, brandClass: BRAND_TEXT_CLASS.formacoes },
       { name: 'Estoque', page: 'stock', icon: Boxes, brandClass: BRAND_TEXT_CLASS.estoque },
     ],
   },
   {
     label: 'Sistema',
-    items: [{ name: 'Permissões', page: 'permissions', icon: KeyRound, brandClass: BRAND_TEXT_CLASS.permissoes }],
+    items: [
+      { name: 'Permissões', page: 'permissions', icon: KeyRound, brandClass: BRAND_TEXT_CLASS.permissoes },
+      { name: 'Auditoria', page: 'audit', icon: ScrollText, brandClass: BRAND_TEXT_CLASS.estoque },
+    ],
   },
 ];
 

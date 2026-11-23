@@ -12,8 +12,4 @@ export interface IHubSchoolGroup {
   schools: IHubSchool[];
   usage_permission_links: IHubPermissionUsageLink[];
   metadata: IHubSchoolGroupMetadata;
-  /** When true, students and teachers of this network cannot log in. Set by CMS admins. */
-  access_suspended?: boolean;
-  /** Internal note about why access was suspended (admin-only, never shown to end users). */
-  suspension_reason?: string | null;
 }

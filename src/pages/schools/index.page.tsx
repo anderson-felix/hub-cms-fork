@@ -1,12 +1,12 @@
 import { GetServerSideProps } from 'next';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '@chakra-ui/react';
-import { KeyRound, Plus, RotateCcw, School, Search, Trash2, X } from 'lucide-react';
+import { KeyRound, Plus, RotateCcw, School, Search, ShieldOff, Trash2, X } from 'lucide-react';
 
 import { cookieManager, formatClassGrade, logError, sortGrades } from '@/_base/utils';
 import { useAsyncCallback, useInputHandler } from '@/_base/hooks';
 import { getProfile } from '@/_base/services/user';
-import { createSchool, listSchools, removeSchool, resetSchoolPassword, updateSchool } from '@/_base/services/school';
+import { createSchool, listSchools, removeSchool, resetSchoolPassword, restrictSchoolAccess, updateSchool } from '@/_base/services/school';
 import { EMPTY_SCHOOL_DATA, registerSchoolSchema } from '@/_base/interfaces/school/IRegisterSchoolParams';
 import { IHubSchool } from '@/_base/interfaces/school';
 import { listSchoolGroups } from '@/_base/services/schoolGroup';
@@ -21,6 +21,7 @@ import { DataTable, ActionButton, PrimaryButton, type Column } from '@/component
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, TextField, SelectField, RadioGroup } from '@/components/ui/form-controls';
+import { AccessControlModal } from '@/components/ui/access-control-modal';
 import { CancelButton, SubmitButton, GhostButton } from '@/components/ui/form-buttons';
 
 interface IProps {
@@ -65,6 +66,7 @@ const Schools: React.FC<IProps> = () => {
   const [resetPasswordConfig, setResetPasswordConfig] = useState<IRedefinePassword>({ password: '', force_redefine: false });
   const [resetProjectsOpen, setResetProjectsOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [restrictModalOpen, setRestrictModalOpen] = useState(false);
 
   const toast = useToast();
   const { data, errors, setErrors, onInputChange, submit, setData } = useInputHandler({
@@ -119,6 +121,23 @@ const Schools: React.FC<IProps> = () => {
       setTargetSchool(null);
 
       toast({ description: 'Escola atualizada!', status: 'success' });
+    },
+    [targetSchool],
+    false,
+    () => setIsLoading(false),
+  );
+
+  // Access is enforced per user on the backend (`disabled_at`), so there is no readable status on the
+  // school itself: this is a fire-and-forget action (enable / restrict), applied instantly.
+  const handleRestrictAccess = useAsyncCallback(
+    async (disabled: boolean) => {
+      if (!targetSchool) return;
+      setIsLoading(true);
+
+      await restrictSchoolAccess(targetSchool.id, disabled);
+
+      setRestrictModalOpen(false);
+      toast({ description: disabled ? 'Acesso da escola restringido!' : 'Acesso da escola habilitado!', status: 'success' });
     },
     [targetSchool],
     false,
@@ -221,7 +240,9 @@ const Schools: React.FC<IProps> = () => {
             <School className="size-4 text-brand-escolas" />
           </div>
           <div className="flex flex-col">
-            <span className="font-medium text-zinc-900">{r.school_name}</span>
+            <span className="font-medium text-zinc-900">
+              {r.school_name}
+            </span>
             <span className="text-[11px] text-zinc-400">{r.school_group_name}</span>
           </div>
         </div>
@@ -303,6 +324,9 @@ const Schools: React.FC<IProps> = () => {
             </Field>
 
             <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+              <GhostButton onClick={() => setRestrictModalOpen(true)}>
+                <ShieldOff className="size-4" /> Gerenciar acessos
+              </GhostButton>
               <GhostButton onClick={() => setResetPasswordOpen(true)}>
                 <KeyRound className="size-4" /> Resetar senhas
               </GhostButton>
@@ -400,6 +424,14 @@ const Schools: React.FC<IProps> = () => {
         description="Tem certeza disso? Essa ação é irreversível."
         confirmLabel="Remover"
         tone="danger"
+      />
+      <AccessControlModal
+        open={restrictModalOpen}
+        onClose={() => setRestrictModalOpen(false)}
+        title="Acessos da escola"
+        description={`Habilita ou restringe o login de todos os alunos e professores da escola ${targetSchool?.display_name ?? ''} (uso típico: inadimplência).`}
+        onEnable={() => handleRestrictAccess(false)}
+        onRestrict={() => handleRestrictAccess(true)}
       />
 
       {/* Create modal */}
