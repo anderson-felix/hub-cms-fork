@@ -13,7 +13,7 @@ export interface IRegisterHubModuleLessonParams {
   description?: string | null;
   position: number;
   lesson_type: HubModuleLessonType;
-  metadata: IHubModuleLessonMetadata;
+  metadata?: IHubModuleLessonMetadata;
 }
 
 export interface IUpdateHubModuleLessonParams extends Partial<Omit<IRegisterHubModuleLessonParams, `module_id` | `lesson_type`>> {

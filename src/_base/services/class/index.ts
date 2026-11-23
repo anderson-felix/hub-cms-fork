@@ -3,3 +3,4 @@ export * from './listClasses';
 export * from './removeClass';
 export * from './resetClassPassword';
 export * from './updateClass';
+export * from './restrictClassAccess';

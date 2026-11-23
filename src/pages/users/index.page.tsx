@@ -8,6 +8,8 @@ import { useAsyncCallback } from '@/_base/hooks';
 import { changeStudentClass, getProfile, listUsers, updateTeacherSchoolLink, updateUserCredentials } from '@/_base/services/user';
 import { removeUser } from '@/_base/services/user/removeUser';
 import { listSchools } from '@/_base/services/school';
+import { listSchoolGroups } from '@/_base/services/schoolGroup';
+import { IHubSchoolGroup } from '@/_base/interfaces/schoolGroup';
 import { IHubUser } from '@/_base/interfaces/user';
 import { IHubSchool } from '@/_base/interfaces/school';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -93,6 +95,7 @@ const Users: React.FC<IProps> = () => {
   const [newPassword, setNewPassword] = useState('');
   const [users, setUsers] = useState<IHubUser[]>([]);
   const [schools, setSchools] = useState<IHubSchool[]>([]);
+  const [schoolGroups, setSchoolGroups] = useState<IHubSchoolGroup[]>([]);
   const [schoolByClassId, setSchoolByClassId] = useState<Record<string, SchoolRef>>({});
   const [schoolByName, setSchoolByName] = useState<Record<string, SchoolRef>>({});
   const [tableData, setTableData] = useState<DataType[]>([]);
@@ -120,9 +123,14 @@ const Users: React.FC<IProps> = () => {
     (async () => {
       setIsLoading(true);
       try {
-        const [{ results }, { results: schoolResults }] = await Promise.all([listUsers(), listSchools()]);
+        const [{ results }, { results: schoolResults }, { results: groupResults }] = await Promise.all([
+          listUsers(),
+          listSchools(),
+          listSchoolGroups(),
+        ]);
         setUsers(results);
         setSchools(schoolResults);
+        setSchoolGroups(groupResults);
 
         const byClassId: Record<string, SchoolRef> = {};
         const byName: Record<string, SchoolRef> = {};
@@ -273,18 +281,17 @@ const Users: React.FC<IProps> = () => {
   const linkedSchoolIds = new Set(linkedSchools.map((s) => s.id));
   const addableSchoolOptions = networkSchools.filter((s) => !linkedSchoolIds.has(s.id)).map((s) => ({ value: s.id, label: s.display_name }));
 
-  const networkOptions = Array.from(new Map(tableData.filter((r) => r.network_id).map((r) => [r.network_id, r.network_name])).entries()).map(
-    ([value, label]) => ({ value, label }),
-  );
+  // Options come from the full network/school lists (not from the loaded users), otherwise a
+  // network or school with no user in the list would never show up in the filters.
+  const networkOptions = schoolGroups
+    .filter((g) => g.id && g.display_name)
+    .map((g) => ({ value: g.id, label: g.display_name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
-  const schoolOptions = Array.from(
-    new Map(
-      tableData
-        .filter((r) => !networkFilter || r.network_id === networkFilter)
-        .flatMap((r) => r.schools)
-        .map((s) => [s.id, s.display_name]),
-    ).entries(),
-  ).map(([value, label]) => ({ value, label }));
+  const schoolOptions = schools
+    .filter((s) => s.id && s.display_name && (!networkFilter || s.hub_school_group_id === networkFilter))
+    .map((s) => ({ value: s.id, label: s.display_name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const filteredData = tableData.filter((row) => {
     if (networkFilter && row.network_id !== networkFilter) return false;
